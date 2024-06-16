@@ -1,0 +1,14 @@
+# Python artifacts.
+**/__pycache__/
+.pytest_cache/
+
+# Python virtual environments.
+.venv/
+
+# Poetry local configuration.
+poetry.toml
+
+# Build files for latex documents.
+notes/notes.aux
+notes/notes.log
+notes/notes.synctex.gz

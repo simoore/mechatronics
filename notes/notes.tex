@@ -1,0 +1,359 @@
+\documentclass{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[charter]{mathdesign}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{commath}
+\usepackage{siunitx}
+\usepackage{tcolorbox}
+\usepackage{cleveref}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+
+\newcommand{\doublebar}[1]{\overline{#1}}
+
+\title{Notes on Mechatronic Systems}
+
+\begin{document}
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Lateral Control of a Car}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{The Bicycle Model}
+
+The car is moving forward at $V_c = \qty{20}{\metre\per\second}$ in its longitudinal direction. The input to the system
+is the rotation of the front wheel $\delta$ in \unit{\radian}. The output of the system is the translation position $X,
+Y$ in \unit{\metre}, and the yaw angle $\psi$ in \unit{\radian} in the world inertial frame.
+
+Since the car is moving at a constant longitudinal velocity and changes in $Y$ are small compared to $X$, we don't need
+to consider the $X$ coordinate as a controlled output of the system.
+
+The approach to model the vehicle is to consider it as a bicycle. The two rear wheels are merged together and the two
+front wheels are merged together. This eliminates the need to consider the two front wheels as separate inputs into the
+system. We just have the angle of the single merged front wheel $\delta$.
+
+The lateral direction $y$ is to the left of the forward moving vehicle in its body frame. The force and moments in the
+lateral direction are,
+\begin{align}
+    F_{yr} + F_{yf} &= ma_y \\
+    -F_{yr}l_r + F_{yf}l_f &= J\ddot{\psi}
+\end{align}
+where $F_{yr}$ is the laternal force applied by the rear wheel, $F_{yf}$ is the lateral force applied by the front
+wheel, $m$ is the mass of the vehicle, $a_y$ is acceleration in the lateral direction, $l_r$ is the distance between
+the center of mass and the rear wheel, $l_f$ is the distance between the center of mass and the front wheel, $J$ is the
+moment of inertia around the center of mass, and $\psi$ is yaw.
+
+The angular acceleration $a_y$ is not only the change in the lateral velocity $\ddot{y}$, but it also consists of a
+component called the centripetal acceleration that causes a change in the longitudinal velocity. This is the product
+of longitudal velocity and the yaw rate,
+\begin{align}
+    a_y = \ddot{y} + \dot{x}\dot{\psi}
+\end{align}
+The centripetal motion appears in these equations since the equations are set in the non-inertial body frame and it
+accounts for the rotation of the body frame in the inertial frame. Therefore the equations of motion become,
+\begin{align}
+    F_{yr} + F_{yf} &= m(\ddot{y} + \dot{x}\dot{\psi}) \\
+    -F_{yr}l_r + F_{yf}l_f &= J\ddot{\psi}
+\end{align}
+The next concept for modeling the car are the slip angles of the tires. At high speeds the tire's direction and angle
+of velocity won't be the same. The angle between the tire's velocity vector and the axis of the body are $\theta_{vf}$
+and $\theta_{vr}$ for the front and rear wheels respectively. The slip angles of the tires $\alpha_f$ and $\alpha_r$
+are the angles between the direction of the tire and their velocity vector. The relationship between the angles of the
+tires are,
+\begin{align}
+    \alpha_f &= \delta - \theta_{vr} \\
+    \alpha_r &= -\theta_{vr}
+\end{align}
+It has been experimentally determined for small slip angles, the lateral forces are proportional to the slip angles,
+that is,
+\begin{align}
+    F_{yf} &= 2C_{\alpha f} \alpha_f \\
+    F_{yr} &= 2C_{\alpha r} \alpha_r
+\end{align}
+where the constants of proportionality are called the cornering stiffnesses with units \unit{\newton\per\radian}. The
+factor of 2 exists because we have combined two wheels into one for the bicycle model. The lateral forces can then be
+expressed in terms of the $\delta$, $\theta_{vf}$, and $\theta_{vr}$ as,
+\begin{align}
+    F_{yf} &= 2C_{\alpha f} (\delta - \theta_{vf}) \\
+    F_{yr} &= 2C_{\alpha r} (-\theta_{vr})
+\end{align}
+We need to express the velocity angles $\theta_{vf}$ and $\theta_{vr}$ in terms of model constants and states. The
+expressions for these angles are,
+\begin{align}
+    \tan(\theta_{vf}) &= \frac{\dot{y} + l_f\dot{\psi}}{\dot{x}} \\
+    \tan(\theta_{vf}) &= \frac{\dot{y} + l_r\dot{\psi}}{\dot{x}}
+\end{align}
+We use a small angle approximation to simplify these equations, that is $\tan(x) \approx x$, when employing these
+angles in the state space model of the system.
+
+By combining the equations for the state space model from input $\delta$ to the states $(\dot{y}, \dot{\psi})$, the
+elements of the state and input matrices of the second order system are:
+\begin{align}
+    a_{11} &= -\frac{2C_{\alpha f} + 2C_{\alpha r}}{m\dot{x}} &
+    a_{12} &= -\dot{x} - \frac{2C_{\alpha f}l_f - 2C_{\alpha r}l_r}{m\dot{x}} \\
+    a_{21} &= \frac{-2C_{\alpha f}l_f + 2C_{\alpha r}l_r}{J\dot{x}} &
+    a_{22} &= \frac{-2C_{\alpha f}l_f^2 - 2C_{\alpha r}l_r^2}{J\dot{x}} \\
+    b_{1} &= \frac{2C_{\alpha f}}{m} &
+    b_{2} &= \frac{2C_{\alpha f}l_f}{J}
+\end{align}
+Then furthermore we have two additional states $(Y, \psi)$ which extends the state space equations to a fourth order
+system. Note that $Y$ is the y-coordinate in the inerital frame of reference. Using the inertial frame of reference
+introduces a non-linearity. Given the states $x = (\dot{y}, \psi, \dot{\psi}, Y)$, and the input $u=\delta$, the
+non-linear state space equations are:
+\begin{align}
+    \ddot{y} &= a_{11}\dot{y} + a_{12}\dot{\psi} + b_1\delta \\
+    \dot{\psi} &= \dot{\psi} \\
+    \ddot{\psi} &= a_{21}\dot{y} + a_{22}\dot{\psi} + b_2\delta \\
+    \dot{Y} &= \dot{y}\cos(\psi) + \dot{x}\sin(\psi)
+\end{align}
+If have small yaw angles, we can linearize the last equation as $\dot{Y} = \dot{y} + \dot{x}\psi$.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Discretizing \& Augmenting the Bicycle Model}
+
+We are going to design an MPC controller for the linearized bicycle model given by,
+\begin{align}
+    \dot{x} &= A_cx + B_cu
+\end{align}
+where the state $x = (\dot{y}, \psi, \dot{\psi}, Y)$ is $u = \delta$, and the continuous time state space matrices are,
+\begin{align}
+    A_c &= \begin{bmatrix}
+        a_{11} & 0 & a_{12} & 0 \\
+        0 & 0 & 1 & 0 \\
+        a_{21} & 0 & a_{22} & 0 \\
+        1 & \dot{x} & 0 & 0
+    \end{bmatrix} &
+    B_c &= \begin{bmatrix}
+        b_1 \\ 0 \\ b_2 \\ 0
+    \end{bmatrix}
+\end{align}
+
+MPC is designed to be applied to a discrete time model. We use a method called zero-order hold to discretize the model
+with sampling rate $T_s$,
+\begin{align}
+    A_d &= e^{AT_s} & B_d = \int_0^{T_s}e^{A\tau}\;d\tau
+\end{align}
+where $A_d$ and $B_d$ are the discrete time state and input matrices fo the model,
+\begin{equation}
+    x_{k+1} = A_dx_k + B_du_k
+\end{equation}
+
+The next step into preparing our model for the application of MPC is that we want to change the input from the wheel
+angle, to the change in wheel angle. Therefore we augment the system to make the wheel angle
+a state and the input becomes the change of wheel angle. The discrete time state of the augmented system is $x =
+(\dot{y}, \psi, \dot{\psi}, Y, \delta)$, the input is $u = \Delta\delta$, and the discrete time state and input
+matrices are:
+\begin{align}
+    A_a &= \begin{bmatrix}
+        A_d & B_d \\
+        0 & I
+    \end{bmatrix} &
+    B_a &= \begin{bmatrix}
+        B_d \\ I
+    \end{bmatrix}
+\end{align}
+With the augmented model, we are able to design a MPC control law following the analysis in the next section.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Solving MPC for Unconstrained LTI Systems}
+
+Given the discrete time system,
+\begin{align}
+    x_{k+1} &= Ax_k + Bu_k \\
+    y_k &= Cx_k + Du_k
+\end{align}
+the k$^{th}$ state is computed as,
+\begin{equation}
+    x_k = A^kx_0 + \begin{bmatrix} A^{k-1}B & A^{k-2}B & \ldots & AB & B \end{bmatrix}
+        \begin{bmatrix} u_0 & u_1 & \ldots & u_{k-2} & u_{k-1} \end{bmatrix}^T
+\end{equation}
+Let's define a global state vector and global input vector along a finite horizon of $N$ steps as:
+\begin{align}
+    x_G &= \begin{bmatrix} x_1^T & x_2^T & \ldots & x_N^T \end{bmatrix}^T
+    \label{eq:global-state} \\
+    u_G &= \begin{bmatrix} u_0^T & u_1^T & \ldots & u_{N-1}^T \end{bmatrix}^T
+    \label{eq:global-input}
+\end{align}
+Then we can compute this global state vector from the initial state and the global input vector as,
+\begin{equation}
+    x_g = \doublebar{C}u_G + \doublebar{A}x_0
+    \label{eq:global-system}
+\end{equation}
+where the two system matrices are,
+\begin{align}
+    \doublebar{C} &= \begin{bmatrix}
+        B         & 0        & \ldots & 0      & 0 \\
+        AB        & B        & \ldots & 0      & 0 \\
+        \vdots    & \vdots   &        &        &   \\
+         A^{N-1}B & A^{N-2}B & \ldots & AB     & B
+    \end{bmatrix} &
+    \doublebar{A} &= \begin{bmatrix}
+        A \\ A^2 \\ \vdots \\ A^N
+    \end{bmatrix}
+\end{align}
+
+The cost function of MPC to minimze is,
+\begin{equation}
+    J = \tfrac{1}{2}e_N^TSe_N + \tfrac{1}{2}\sum_{i=0}^{N-1}\left[ e_i^TQe_i + u_i^TRu_i \right]
+\end{equation}
+This basically states that we should control the system to minimize the weighted sum of the errors and control
+actions, with a dedicated weighting given to the error at the end of the finite horizon. We aim to find an input vector
+$[u_0, \ldots, u_{N-1}]$ that minimizes this cost function. The weighting matrices $S$, $Q$, and $R$, are used to tune
+the performance of the control system. To derive a solution to this equation, the first thing we do is substitute in
+the error term,
+\begin{equation}
+    e_k = r_k - \tilde{C}x_k
+\end{equation}
+into the cost function. $\tilde{C}$ transforms the state into a signal that we are interested to control. Expanding the
+cost function gives,
+\begin{align}
+    J
+    &= \tfrac{1}{2}\left(r_N - \tilde{C}x_N\right)^TS\left(r_N - \tilde{C}x_N\right)^T
+        + \tfrac{1}{2}\sum_{i=0}^{N-1}\left[
+            \left(r_i - \tilde{C}x_i\right)^TQ\left(r_i - \tilde{C}x_i\right)^T + u_i^TRu_i
+        \right] \\
+    &= \tfrac{1}{2}\left[r_N^TSr_N - r_N^TS\tilde{C}x_N - x_N^T\tilde{C}^TSr_N + x_N^T\tilde{C}^TS\tilde{C}x_N\right]
+       + \tfrac{1}{2}\sum_{i=0}^{N-1}\left[
+            r_i^TQr_i - r_i^TQ\tilde{C}x_i - x_i^T\tilde{C}^TQr_i + x_i^T\tilde{C}^TQ\tilde{C}x_i
+            + u_i^TRu_i
+        \right]
+\end{align}
+We can combine the quadratic terms that are equal (the terms that contain both state and reference vectors can be
+paired and summed due to their equality, see \Crefrange{eq:quad-a}{eq:quad-c}). The cost function simplifies to,
+\begin{align}
+    J
+    &= \tfrac{1}{2}\left[r_N^TSr_N - 2r_N^TS\tilde{C}x_N + x_N^T\tilde{C}^TS\tilde{C}x_N\right]
+        + \tfrac{1}{2}\sum_{i=0}^{N-1}\left[
+        r_i^TQr_i - 2r_i^TQ\tilde{C}x_i + x_i^T\tilde{C}^TQ\tilde{C}x_i
+        + u_i^TRu_i
+    \right]
+\end{align}
+
+\begin{tcolorbox}[title={Cost Function Terms with $r_i$ and $x_i$ are Equal.}]
+    \begin{align}
+        \frac{1}{2}r_i^TQ\tilde{C}x_i
+        &= \frac{1}{2}\left(x_i^T\tilde{C}^TQ^Tr_i\right)^T
+            & & \text{From properties of tranpose matrices.} \label{eq:quad-a} \\
+        &= \frac{1}{2}\left(x_i^T\tilde{C}^TQr_i\right)^T
+            & & \text{Q is a symmetric matrix.} \label{eq:quad-b} \\
+        &= \frac{1}{2}x_i^T\tilde{C}^TQr_i
+           & & \text{LHS is scalar thus symmetric.}  \label{eq:quad-c}
+    \end{align}
+\end{tcolorbox}
+
+Since this is a cost function that we need to minimize, all constant terms have no effect on the solution. So we are
+going to remove constant terms to derive a simpler cost function with the same solution. Any terms that depend only on
+the reference $r_k$ or the initial state $x_0$ are constant. The new cost function is,
+\begin{equation}
+    J^\prime = \tfrac{1}{2}\left[- 2r_N^TS\tilde{C}x_N + x_N^T\tilde{C}^TS\tilde{C}x_N\right]
+        + \tfrac{1}{2}\sum_{i=1}^{N-1}\left[
+        - 2r_i^TQ\tilde{C}x_i + x_i^T\tilde{C}^TQ\tilde{C}x_i
+        + u_i^TRu_i \right]
+    + \tfrac{1}{2}u_0^TRu_0
+\end{equation}
+Then we are going to move the cost function expression above into a matrix form. In the same way we have previously
+defined a global state vector and global input vector in \Crefrange{eq:global-state}{eq:global-input} we will also
+define a global reference vector as,
+\begin{align}
+    r_G &= \begin{bmatrix} r_1^T & r_2^T & \ldots & r_N^T \end{bmatrix}^T
+\end{align}
+Then the cost function can be rewritten in a matrix form as,
+\begin{equation}
+    J^\prime = \tfrac{1}{2}x_G^T \doublebar{Q} x_G - r_G^T\doublebar{T}x_G + \tfrac{1}{2}u_G^T\doublebar{R}u_G
+\end{equation}
+where $\doublebar{Q}$, $\doublebar{T}$, and $\doublebar{R}$ are block diagonal matrices given as,
+\begin{align}
+    \doublebar{Q} &= \begin{bmatrix}
+        \tilde{C}^TQ\tilde{C} &                       &        &                       &                       \\
+                              & \tilde{C}^TQ\tilde{C} &        &                       &                       \\
+                              &                       & \ddots &                       &                       \\
+                              &                       &        & \tilde{C}^TQ\tilde{C} &                       \\
+                              &                       &        &                       & \tilde{C}^TS\tilde{C} \\
+    \end{bmatrix} &
+    \doublebar{T} &= \begin{bmatrix}
+        Q\tilde{C} &            &        &             \\
+                   & Q\tilde{C} &        &             \\
+                   &            & \ddots &             \\
+                   &            &        & S\tilde{C}  \\
+    \end{bmatrix} &
+    \doublebar{R} &= \begin{bmatrix}
+        R &   &        &   \\
+          & R &        &   \\
+          &   & \ddots &   \\
+          &   &        & R
+    \end{bmatrix}
+\end{align}
+Then we substitute the expression for the global state vector in \Cref{eq:global-system} into the cost function,
+\begin{align}
+    J^\prime
+    &= \tfrac{1}{2}\left(u_G^T\doublebar{C}^T + x_0^T\doublebar{A}^T\right)\doublebar{Q}
+    \left(\doublebar{C}u_G + \doublebar{A}x_0\right)
+    - r_G\doublebar{T}\left(\doublebar{C}u_G + \doublebar{A}x_0\right) + \frac{1}{2}u_G^T\doublebar{R}u_G \\
+    &= \tfrac{1}{2}u_G^T\doublebar{C}^T\doublebar{Q}\doublebar{C}u_G
+    + \tfrac{1}{2}x_0^T\doublebar{A}^T\doublebar{Q}\doublebar{C}u_G
+    + \tfrac{1}{2}u_g^T\doublebar{C}^T\doublebar{Q}\doublebar{A}x_0
+    + \tfrac{1}{2}x_0^T\doublebar{A}^T\doublebar{Q}\doublebar{A}x_0
+    - r_G^T\doublebar{T}\doublebar{C}u_G
+    - r_g^T\doublebar{T}\doublebar{A}x_0
+    + \frac{1}{2}u_G^T\doublebar{R}u_G \\
+    &= \tfrac{1}{2}u_G^T\doublebar{C}^T\doublebar{Q}\doublebar{C}u_G
+    + x_0^T\doublebar{A}^T\doublebar{Q}\doublebar{C}u_G
+    + \tfrac{1}{2}x_0^T\doublebar{A}^T\doublebar{Q}\doublebar{A}x_0
+    - r_G^T\doublebar{T}\doublebar{C}u_G
+    - r_g^T\doublebar{T}\doublebar{A}x_0
+    + \frac{1}{2}u_G^T\doublebar{R}u_G
+\end{align}
+and again, since there are constant terms in this cost function (those terms that are only a function of the reference
+and initial state), we can create a simplifed cost function with the same solution by removing constant terms,
+\begin{align}
+    J''
+    &=
+    \tfrac{1}{2}u_G^T\doublebar{C}^T\doublebar{Q}\doublebar{C}u_G
+    + x_0^T\doublebar{A}^T\doublebar{Q}\doublebar{C}u_G
+    - r_G^T\doublebar{T}\doublebar{C}u_G
+    + \tfrac{1}{2}u_G^T\doublebar{R}u_G
+    \\
+    &=
+    \tfrac{1}{2}u_G^T\left(\doublebar{C}^T\doublebar{Q}\doublebar{C} + \doublebar{R}\right)u_G
+    +
+    \begin{bmatrix} x_0^T & r_G^T \end{bmatrix}
+    \begin{bmatrix} \doublebar{A}^T\doublebar{Q}\doublebar{C} \\ -\doublebar{T}\doublebar{C} \end{bmatrix} u_G
+    \\
+    &= \tfrac{1}{2}u_G^T\doublebar{H}u_G +  \begin{bmatrix} x_0^T & r_G^T \end{bmatrix}\doublebar{F}^Tu_G
+\end{align}
+Note that this is now a quadratic function with respect to the control input $u_G$ which is what we want to find.
+Taking the the gradient of this function (see \Crefrange{eq:grad-a}{eq:grad-b}) and equating it to zero gives the
+control law,
+\begin{equation}
+    u_G = - \doublebar{H}^{-1}\doublebar{F}\begin{bmatrix} x_0 \\ r_G \end{bmatrix}
+\end{equation}
+Typically we only apply the first control action from the global input vector before recomputing it to account for
+uncertainties in the system model and disturbances.
+
+\begin{tcolorbox}[title={Gradient of Quadratic Functions}]
+    Given the following quadratic function where $A$ is symmetric (ie. $A=A^T$),
+    \begin{align}
+        y = \frac{1}{2}x^TAx + B^Tx
+        \label{eq:grad-a}
+    \end{align}
+    the gradient of $y$ w.r.t. $x$ is,
+    \begin{align}
+        \nabla~y = Au + B
+        \label{eq:grad-b}
+    \end{align}
+\end{tcolorbox}
+
+\section{References}
+
+https://engineeringmedia.com/controlblog/the-kalman-filter
+
+\end{document}
