@@ -47,3 +47,37 @@ def calculate_weighted_least_squared(
     Pmatrix = np.linalg.inv(Hmatrix.T @ Rinv @ Hmatrix)
     Xmatrix = Pmatrix @ Hmatrix.T @ Rinv @ Ymatrix
     return Xmatrix, Pmatrix
+
+
+def recursive_least_squares(
+        Xmatrix_prev: np.ndarray, 
+        Pmatrix_prev: np.ndarray,
+        Hmatrix: np.ndarray, 
+        Rmatrix: np.ndarray, 
+        Ymatrix: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    This calculates the recursive least squares.
+
+    Parameters
+    ----------
+    Hmatrix 
+        This is the model matrix that maps the solution to the measurement.
+    Ymatrix
+        The measurement at a single timestep.
+    Rmatrix
+        The covariance of the measurement noise.
+
+    Returns
+    -------
+    Xmatrix
+        The solution.
+    Pmatrix
+        The uncertainty of the solution.
+    """
+    gain = Pmatrix_prev @ Hmatrix.T @ np.linalg.inv(Hmatrix @ Pmatrix_prev @ Hmatrix.T + Rmatrix)
+    Xmatrix = Xmatrix_prev + gain @ (Ymatrix - Hmatrix @ Xmatrix_prev)
+    KH = gain @ Hmatrix
+    I_KH = np.eye(KH.shape[0]) - KH
+    Pmatrix = I_KH @ Pmatrix_prev @ I_KH.T + gain @ Rmatrix @ gain.T
+    return Xmatrix, Pmatrix
