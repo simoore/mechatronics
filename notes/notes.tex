@@ -139,7 +139,7 @@ where the state $x = (\dot{y}, \psi, \dot{\psi}, Y)$ is $u = \delta$, and the co
 MPC is designed to be applied to a discrete time model. We use a method called zero-order hold to discretize the model
 with sampling rate $T_s$,
 \begin{align}
-    A_d &= e^{AT_s} & B_d = \int_0^{T_s}e^{A\tau}\;d\tau
+    A_d &= e^{A_cT_s} & B_d = \int_0^{T_s}e^{A_c\tau}B_c\;d\tau
 \end{align}
 where $A_d$ and $B_d$ are the discrete time state and input matrices fo the model,
 \begin{equation}
@@ -352,6 +352,116 @@ uncertainties in the system model and disturbances.
     \end{align}
 \end{tcolorbox}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Automonomous Car}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{The Equations of Motion}
+
+First we will derive all the forces and moments on the vehicle in the body frame. The forces are due to the force from
+the turning front wheel, the engine, the rolling drag, and the slip of the rear wheel. They are expressed as,
+\begin{align}
+    F^B_x &= F_a - F_r - F_{yf}sin(\delta) \\
+    &= ma - \mu mg - F_{yf}sin(\delta) \\
+    F^B_y &= F_{yr} + F_{yf}cos(\delta) \\
+    M^B_z & = F_{yf}cos(\delta)l_f - F_{yr}l_r
+\end{align}
+where $(F^B_x, F^B_x, M^B_z)$ are the net forces and moments in body frame, $F_a$ is the applied force, $F_r$ is the
+rolling resistance force, $m$ is the mass of the car, $a$ is applied logitudinal acceleration, $\mu$ is the rolling
+resistance coefficient, $g$ is acceleration due to gravity, $F_{yr}$ is the lateral force applied by the front wheel,
+$\delta$ is the angle of the front wheel, $F_{yr}$ is the lateral force applied by the rear wheel, $l_f$ is the
+distance between the front wheel and center of mass, and $l_r$ is the distance between the rear wheel and the center of
+mass.
+
+The lateral forces on front and rear wheels are,
+\begin{align}
+    F_{yf} &= C_{\alpha f}\alpha_f = C_{\alpha f}(\delta - \theta_{vf}) \\
+    F_{yr} &= C_{\alpha r}\alpha_r = C_{\alpha r}(- \theta_{vr})
+\end{align}
+where $C_{\alpha f}$ and $C_{\alpha r}$ are the cornering stiffnesses of the front and rear wheels. $\alpha_f$ and
+$\alpha_r$ are the slip angles and is the difference between velocity of the tire and the angle of the tire. Tire
+angles are,
+\begin{align}
+    \tan(\theta_{vf}) &= \frac{\dot{y}}{\dot{x}} + \frac{\psi l_f}{\dot{x}} \\
+    \tan(\theta_{vr}) &= \frac{\dot{y}}{\dot{x}} - \frac{\psi l_r}{\dot{x}}
+\end{align}
+And we apply a small angle assumption ($tan(x) = x$).
+
+\begin{tcolorbox}[title={Newton's laws in a non-inertial frame for reference.}]
+
+Let's say we have a non-inerial frame of reference in 2D space. The unit axes of the frame of reference are $(i, j)$.
+This frame of reference is the body frame of a mass of $m$ \unit{\kilogram} denoted by $B$. We have a force applied to
+the body $F^B$ which can be decomposed along the axes of the body frame. Then we apply Newton's second law.
+\begin{align}
+    F^B
+    &= F_x^Bi + F_y^Bj \\
+    &= m(a_xi + a_yj) \\
+    &= m(\frac{d(\dot{x}i)}{dt} + \frac{d(\dot{y}j)}{dt}) \\
+    &= m(\ddot{x}i + \dot{x}\dot{i} + \ddot{y}j + \dot{y}\dot{j})
+\end{align}
+Since it is a non-inertial frame of referece, the change in the unit vectors $(\dot{i}, \dot{j})$ are non-zero. In 2D
+space, the change in the body frame occurs due to rotation around the z-axis. Let's consider the rotation vector
+$\omega = [0, 0, \dot{\psi}]$ around the z-axis coming out of the 2D plane. Then the expression from above becomes,
+\begin{align}
+    &= m(\ddot{x}i + \ddot{y}j + \dot{x}(\omega\times i) + \dot{y}(\omega\times j)) \\
+    &= m(\ddot{x}i + \ddot{y}j + \omega\times(\dot{x}i + \dot{y}j))
+\end{align}
+Then we group based on axes,
+\begin{align}
+    \begin{bmatrix} F_x^B \\ F_y^B \end{bmatrix} &=
+        m\left( \begin{bmatrix} \ddot{x} \\ \ddot{y} \end{bmatrix}
+        + \begin{bmatrix} 0 \\ 0 \\ \dot{\psi} \end{bmatrix} \times
+        \begin{bmatrix} \dot{x} \\ \dot{y} \\ 0 \end{bmatrix}
+        \right) \\
+    &= m\begin{bmatrix} \ddot{x} - \dot{\psi}\dot{y} \\ \ddot{y} + \dot{\psi}\dot{x} \end{bmatrix}
+\end{align}
+This gives the accelerations in the body frame,
+\begin{align}
+    a_x = \ddot{x} - \dot{\psi}\dot{y} \\
+    a_y = \ddot{y} + \dot{\psi}\dot{x} \\
+\end{align}
+
+We get a similar expression for moments. For a 2D frame of reference, we only rotate in the the z-axis denoted with
+unit vector $k$. For an body with moment interia $I$, the net angular acceleration is found with,
+\begin{equation}
+    M^B = M_z^Bk = I\frac{d(\dot{\psi}k)}{dt} =  I\left(\ddot{\psi}k + \dot{\psi}k\right)
+\end{equation}
+Since the unit vector $k$ doesn't change for a 2D frame of reference, $\dot{k} = 0$. Thefore the angular acceleration
+due to the net momement is $\dot{\psi}$.
+
+\end{tcolorbox}
+
+Then the laws of motion for the vehicle are,
+\begin{align}
+    F^B_x &= m(\ddot{x} - \dot{\psi}) = ma_x \\
+    F^B_y &= m(\ddot{y} + \dot{\psi}) = ma_y \\
+    M^B_z &= I\ddot{\psi}
+\end{align}
+Finally we need to convert these equations in a state space form. We add two additional states since we are interested
+in the position in the inertial frame of reference. The input to the system is both the acceleration $a$ and the
+steering angle $\delta$. The equations are,
+\begin{align}
+    \ddot{x} &= a - \frac{F_{yf}sin(\delta)}{m} - \mu g + \dot{\psi}\dot{y} \\
+    \ddot{y} &=  \frac{F_{yr}}{m} + \frac{F_{yf}cos(\delta)}{m} - \dot{\psi}\dot{x} \\
+    \dot{\psi} &=  \dot{\psi} \\
+    \ddot{\psi} &=  \frac{F_{yf}cos(\delta)l_f}{I} - \frac{F_{yr}l_r}{I} \\
+    \dot{X} &= \dot{x}cos(\psi) - \dot{y}sin(\psi) \\
+    \dot{Y} &= \dot{x}sin(\psi) + \dot{y}cos(\psi)
+\end{align}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Unconstrained Linear Parameter Varying MPC}
+
+Linear parameter varying (LPV) MPC is more accurate and computational efficient than simply linearizing the model and
+applying linear MPC.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{References}
 
 https://engineeringmedia.com/controlblog/the-kalman-filter

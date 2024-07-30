@@ -2,6 +2,8 @@ import control as ct
 import dataclasses
 import numpy as np
 
+from scipy.linalg import expm, inv
+
 
 DENSITY_OF_WATER_KG_M3 = 1000.0
 GRAVITY_M_S2 = 9.8
@@ -46,6 +48,15 @@ def pid_controller(kp: float, ki: float, kd: float, td: float, name: str) -> ct.
 def one_dof_mass(mass_kg: float, damping_Ns_m: float, stiffness_N_m: float, name: str = "") -> ct.StateSpace:
     """
     Returns the model of a spring-mass-damper system.
+
+    Parameters
+    ----------
+    mass_kg
+        This is the mass parameter of the system.
+    damping_Ns_m
+        The damping coefficient of the system.
+    stiffness_N_m
+        The stiffness of the system.
     """
     A = np.array([[-damping_Ns_m/mass_kg, -stiffness_N_m/mass_kg], [1.0, 0.0]])
     B = np.array([[1.0/mass_kg, 1.0/mass_kg], [0.0, 0.0]])
@@ -138,3 +149,26 @@ def augmented_bicycle_model(sysd: ct.StateSpace) -> ct.StateSpace:
 
     sys_aug = ct.StateSpace(A_aug, B_aug, C_aug, D_aug, sysd.dt)
     return sys_aug
+
+
+def zero_order_hold(Amatrix: np.ndarray, Bmatrix: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    This executes the zero order discretization of a continuous state space system.
+
+    Parameters
+    ----------
+    Amatrix
+        The continuous time state matrix.
+    Bmatrix
+        The continuous time input matrix
+
+    Returns
+    -------
+    Fmatrix
+        The discrete time state matrix.
+    Gmatrix
+        The discrete time input matrix.
+    """
+    Fmatrix = expm(Amatrix * dt)
+    Gmatrix = inv(Amatrix) @ (Fmatrix - np.eye(Amatrix.shape[0]))  @ Bmatrix
+    return Fmatrix, Gmatrix
