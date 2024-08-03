@@ -2,8 +2,6 @@ import control as ct
 import dataclasses
 import numpy as np
 
-from scipy.linalg import expm, inv
-
 
 DENSITY_OF_WATER_KG_M3 = 1000.0
 GRAVITY_M_S2 = 9.8
@@ -151,24 +149,91 @@ def augmented_bicycle_model(sysd: ct.StateSpace) -> ct.StateSpace:
     return sys_aug
 
 
-def zero_order_hold(Amatrix: np.ndarray, Bmatrix: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
-    """
-    This executes the zero order discretization of a continuous state space system.
+@dataclasses.dataclass
+class VehicleModelAParams:
+    initial_x_position: float
+    """The initial x-position of the vehicle [m]"""
+    initial_y_position: float
+    """The initial y-position of the vehicle [m]"""
+    initial_speed: float
+    """The initial speed of the vehicle [m/s]"""
+    initial_heading_rad: float
+    """The initial heading of the vehicle [rad]"""
 
-    Parameters
-    ----------
-    Amatrix
-        The continuous time state matrix.
-    Bmatrix
-        The continuous time input matrix
 
-    Returns
-    -------
-    Fmatrix
-        The discrete time state matrix.
-    Gmatrix
-        The discrete time input matrix.
+class VehicleModelA:
     """
-    Fmatrix = expm(Amatrix * dt)
-    Gmatrix = inv(Amatrix) @ (Fmatrix - np.eye(Amatrix.shape[0]))  @ Bmatrix
-    return Fmatrix, Gmatrix
+    This is a basic kinematic model of a vehicle that takes as input an acceleration and yaw rate. The output state
+    of the model is the position, velocity, and heading in a 2D plane.
+    """
+
+    X_POS_IDX = 0
+    Y_POS_IDX = 1
+    SPEED_IDX = 2
+    YAW_IDX = 3
+
+    def __init__(self, vehicle_params: VehicleModelAParams):
+        """
+        The state vector is [x-position, y-position, velocity, yaw].
+        """
+        self._state = np.array([[
+            vehicle_params.initial_x_position, 
+            vehicle_params.initial_y_position, 
+            vehicle_params.initial_speed, 
+            vehicle_params.initial_heading_rad,
+        ]]).T
+
+
+    def state(self) -> np.ndarray:
+        """
+        """
+        return self._state
+
+
+    def position(self) -> np.ndarray:
+        """
+        Returns the position.
+        """
+        return self._state[:self.SPEED_IDX, :]
+    
+
+    def speed(self) -> float:
+        """
+        Returns the speed of the vehicle.
+        """
+        return self._state[self.SPEED_IDX, 0]
+    
+
+    def heading(self) -> float:
+        """
+        Returns the heading of the vehicle in rad.
+        """
+        return self._state[self.YAW_IDX, 0]
+    
+
+    def velocity(self) -> np.ndarray:
+        """
+        Returns the velocity vector of the vehicle.
+        """
+        yaw = self.heading()
+        return self.speed() * np.array([[np.cos(yaw)], [np.sin(yaw)]])
+    
+
+    def update(self, dt: float, accel: float, yaw_rate: float):
+        """
+        Executes the dynamics of the model.
+
+        Parameters
+        ----------
+        dt
+            The time step since the last execution of the model [s]
+        accel
+            The acceleration along the heading direction [m/s/s]
+        yaw_rate
+            The change in angular heading [rad/s]
+        """
+        xpos, ypos, vel, yaw = self._state
+        self._state[self.X_POS_IDX] = xpos + vel * np.cos(yaw) * dt
+        self._state[self.Y_POS_IDX] = ypos + vel * np.sin(yaw) * dt
+        self._state[self.SPEED_IDX] = vel + accel * dt
+        self._state[self.YAW_IDX] = yaw + yaw_rate * dt

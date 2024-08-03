@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import expm, inv
 
-from mechatronics.models import zero_order_hold
+from mechatronics.discretization import zero_order_hold
 
 def test_zoh():
 
