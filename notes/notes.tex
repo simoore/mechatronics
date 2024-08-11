@@ -456,8 +456,47 @@ steering angle $\delta$. The equations are,
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Unconstrained Linear Parameter Varying MPC}
 
-Linear parameter varying (LPV) MPC is more accurate and computational efficient than simply linearizing the model and
-applying linear MPC.
+The linear parameter varying (LPV) form of the non-linear model is,
+\begin{equation}
+    \begin{bmatrix} \ddot{x} \\ \ddot{y} \\ \dot{\psi} \\ \ddot{\psi} \\ \dot{X} \\ \dot{Y} \end{bmatrix}
+    =
+    \begin{bmatrix}
+        \frac{-\mu g}{\dot{x}} & \frac{C_{\alpha f}\sin(\delta)}{m\dot{x}} & 0 &
+            \left(\frac{C_{\alpha f}\sin(\delta)l_f}{m\dot{x}} + \dot{y}\right) & 0 & 0 \\
+        0 & \frac{-C_{\alpha r} + C_{\alpha f}\cos(\delta)}{m\dot{x}} & 0 &
+            \left(-\frac{(C_{\alpha f}\cos(\delta)l_f - C_{\alpha r}l_r)}{m\dot{x}} - \dot{x}\right) & 0 & 0 \\
+        0 & 0 & 0 & 1 & 0 & 0 \\
+        0 & \left(-\frac{(C_{\alpha f}\cos(\delta)l_f - C_{\alpha r}l_r)}{I_z\dot{x}}\right) & 0 &
+            \left(-\frac{(C_{\alpha f}\cos(\delta)l_f^2 - C_{\alpha r}l_r^2)}{I_z\dot{x}}\right) & 0 & 0 \\
+        \cos(\psi) & -\sin(\psi) & 0 & 0 & 0 & 0 \\
+        \sin(\psi) & \cos(\psi) & 0 & 0 & 0 & 0
+    \end{bmatrix}
+    \begin{bmatrix} \dot{x} \\ \dot{y} \\ \psi \\ \dot{\psi} \\ X \\ Y \end{bmatrix}
+    +
+    \begin{bmatrix}
+        \frac{-C_{\alpha f}sin(\delta)}{m} & 1 \\
+        \frac{C_{\alpha f}cos(\delta)}{m} & 0 \\
+        0 & 0 \\
+        \frac{C_{\alpha f}cos(\delta)l_f}{m} & 0 \\
+        0 & 0 \\ 0 & 0
+    \end{bmatrix}
+    \begin{bmatrix} \delta \\ a \end{bmatrix}
+\end{equation}
+The planner which produces the trajectory for the vehicle to follow not only generates the desired $X,Y,\psi,$ we also
+control the lateral velocity $\dot{x}$. Given a trajectory $t -> (X, Y)$, we can find the tangent of the trajectory to
+compute $\psi$. And for the lateral velocity we differentiate $(X, Y)$ and rotate the velocities into the body frame
+using the reference $\psi$. Therefore the output matrix $C$ is,
+\begin{equation}
+    \begin{bmatrix} \dot{x} \\ \psi \\ X \\ Y \end{bmatrix}
+    =
+    \begin{bmatrix}
+        1 & 0 & 0 & 0 & 0 & 0 \\
+        0 & 0 & 1 & 0 & 0 & 0 \\
+        0 & 0 & 0 & 0 & 1 & 0 \\
+        0 & 0 & 0 & 0 & 0 & 1
+    \end{bmatrix}
+    \begin{bmatrix} \dot{x} \\ \dot{y} \\ \psi \\ \dot{\psi} \\ X \\ Y \end{bmatrix}
+\end{equation}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
