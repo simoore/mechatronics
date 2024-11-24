@@ -3,7 +3,7 @@ import dataclasses
 import functools
 import numpy as np
 
-from typing import Iterable, Tuple
+from typing import Iterable
 
 
 def block_diag(ms: Iterable[np.ndarray]) -> np.ndarray:
@@ -53,7 +53,7 @@ class MPCParameters:
     """The weighting matrix for the conrol action."""
 
 
-def unconstrained_lti(sysd: ct.StateSpace, p: MPCParameters) -> Tuple[np.ndarray, np.ndarray]:
+def unconstrained_lti(sysd: ct.StateSpace, p: MPCParameters) -> tuple[np.ndarray, np.ndarray]:
     """
     This function is the computes the analytical solution to the MPC optimization problem for unconstrained LTI 
     systems.
@@ -80,7 +80,7 @@ def unconstrained_lti(sysd: ct.StateSpace, p: MPCParameters) -> Tuple[np.ndarray
     QC = p.Q @ sysd.C
     SC = p.S @ sysd.C
 
-    def multiply_shape(mat: np.ndarray, factor: int) -> Tuple[int, int]:
+    def multiply_shape(mat: np.ndarray, factor: int) -> tuple[int, int]:
         return (mat.shape[0] * factor, mat.shape[1] * factor)
 
     Qbar = np.zeros(multiply_shape(CQC, p.hz))
@@ -89,19 +89,19 @@ def unconstrained_lti(sysd: ct.StateSpace, p: MPCParameters) -> Tuple[np.ndarray
     Cbar = np.zeros(multiply_shape(sysd.B, p.hz))
     Abar = np.zeros((sysd.A.shape[0] * p.hz, sysd.A.shape[1]))
 
-    def Qbar_slice(i: int) -> Tuple[slice, slice]:
+    def Qbar_slice(i: int) -> tuple[slice, slice]:
         return (slice(CQC.shape[0] * i, CQC.shape[0] * (i + 1)), slice(CQC.shape[1] * i, CQC.shape[1] * (i + 1)))
     
-    def Tbar_slice(i: int) -> Tuple[slice, slice]:
+    def Tbar_slice(i: int) -> tuple[slice, slice]:
         return (slice(SC.shape[0] * i, SC.shape[0] * (i + 1)), slice(SC.shape[1] * i, SC.shape[1] * (i + 1)))
     
-    def Rbar_slice(i: int) -> Tuple[slice, slice]:
+    def Rbar_slice(i: int) -> tuple[slice, slice]:
         return (slice(p.R.shape[0] * i, p.R.shape[0] * (i + 1)), slice(p.R.shape[1] * i, p.R.shape[1] * (i + 1)))
     
-    def Abar_slice(i: int) -> Tuple[slice, slice]:
+    def Abar_slice(i: int) -> tuple[slice, slice]:
         return (slice(sysd.A.shape[0] * i, sysd.A.shape[0] * (i + 1)) , slice(0, sysd.A.shape[1]))
     
-    def Cbar_slice(i: int, j: int) -> Tuple[slice, slice]:
+    def Cbar_slice(i: int, j: int) -> tuple[slice, slice]:
         return (slice(sysd.B.shape[0] * i, sysd.B.shape[0] * (i + 1)), 
             slice(sysd.B.shape[1] * j, sysd.B.shape[1] * (j + 1)))
 

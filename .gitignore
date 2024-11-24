@@ -12,3 +12,5 @@ poetry.toml
 notes/notes.aux
 notes/notes.log
 notes/notes.synctex.gz
+
+scripts/
