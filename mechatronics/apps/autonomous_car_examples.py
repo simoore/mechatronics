@@ -1,4 +1,3 @@
-import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -42,7 +41,7 @@ def generate_reference_signal(k: int, hz: int, traj: BicycleModelTrajectory) -> 
     return ref
 
 
-def simulate():
+def main():
     
     ###########################################################################
     # PARAMETERS
@@ -141,46 +140,7 @@ def simulate():
 
     fig.set_size_inches(8, 6)
     plt.show()
+
     
-
-def main():
-
-    traj = car_trajectory_2(0.02)
-    # Plot the world
-    plt.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95, wspace=0.15, hspace=0.2)
-    plt.plot(traj.xg, traj.yg, 'b', linewidth=2, label='The ref trajectory')
-    plt.xlabel('X-position [m]',fontsize=15)
-    plt.ylabel('Y-position [m]',fontsize=15)
-    plt.grid(True)
-    plt.legend(loc='upper right',fontsize='small')
-    #plt.xlim(0, x_lim)
-    #plt.ylim(0, y_lim)
-    #plt.xticks(np.arange(0,x_lim+1,int(x_lim/10)))
-    #plt.yticks(np.arange(0,y_lim+1,int(y_lim/10)))
-    #plt.show()
-
-    plt.figure()
-    
-    plt.subplots_adjust(left=0.05,bottom=0.05,right=0.95,top=0.95,wspace=0.15,hspace=0.2)
-    plt.plot(traj.t, traj.xg, 'b', linewidth=2, label='X ref')
-    plt.plot(traj.t, traj.yg, 'r', linewidth=2, label='Y ref')
-    plt.xlabel('t-position [s]', fontsize=15)
-    plt.ylabel('X,Y-position [m]', fontsize=15)
-    plt.grid(True)
-    plt.legend(loc='upper right', fontsize='small')
-
-    plt.figure()
-    plt.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95, wspace=0.15, hspace=0.2)
-    plt.plot(traj.t, traj.psi, 'b', linewidth=2, label='The psi ref trajectory')
-    # plt.xlabel('X-position [m]',fontsize=15)
-    # plt.ylabel('Y-position [m]',fontsize=15)
-    # plt.grid(True)
-    # plt.legend(loc='upper right',fontsize='small')
-
-    #plt.xlim(0, t[-1])
-    plt.show()
-    # exit()
-
-
 if __name__ == "__main__":
     main()
