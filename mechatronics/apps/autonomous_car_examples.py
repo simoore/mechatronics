@@ -1,22 +1,36 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from mechatronics.models import BicycleModelParameters, bicycle_model, augmented_bicycle_model
-from mechatronics.mpc import unconstrained_lti, MPCParameters
-from mechatronics.trajectories import CubicTrajectoryConfig, cubic_trajectory, BicycleModelTrajectory
-from mechatronics.trajectories import StraightTrajectoryConfig, straight_trajectory
-from mechatronics.trajectories import SineTrajectoryConfig, sine_trajectory, car_trajectory_3, car_trajectory_1, car_trajectory_2
+from mechatronics.models import CarModelParameters, car_model, augmented_car_model
+from mechatronics.mpc import Constraints, MPCParameters, constrained_lti, solve_constrained_lti
+from mechatronics.trajectories import CarTrajectory, car_trajectory_3
 
 
-def clamp(x: float, lb: float, ub: float) -> float:
+def control_action(u: np.ndarray, ug: np.ndarray, constraints: Constraints) -> np.ndarray:
     """
-    The return value is `x` if lb < x < ub, otherwise it returns `lb` if x < lb or `ub` if x > ub.
-    Used to apply saturation.
+    Takes the solution of an MPC iteration and computes the control action to apply to the system. This function
+    adds the delta values of the control action computed by the MPC optimization and adds them to the previous control
+    action. It also saturates the control action.
+
+    Parameters
+    ----------
+    u
+        The previous iteration control action.
+    ug
+        The global control action solution from the MPC optimization.
+    contraints
+        Contains the limits of the control action for saturation.
+
+    Returns
+    -------
+    unew
+        The new control action to apply to the system.
     """
-    return lb if x < lb else ub if x > ub else x
+    unew = np.clip(u + ug[0:2, :], constraints.xlb[2:, :], constraints.xub[2:, :])
+    return unew
 
 
-def generate_reference_signal(k: int, hz: int, traj: BicycleModelTrajectory) -> np.ndarray:
+def generate_reference_signal(k: int, hz: int, traj: CarTrajectory) -> np.ndarray:
     """
     Generates the global reference signal for a given timestep of the MPC simulation.
 
@@ -27,18 +41,82 @@ def generate_reference_signal(k: int, hz: int, traj: BicycleModelTrajectory) -> 
     hz
         The MPC horizon size.
     traj
-        The trajectory we want the vehicle to follow over the entire simulation. We extract just a portion of the
-        y-coord reference, and the yaw (psi) reference to create the global reference vector.
+        The trajectory we want the vehicle to follow over the entire simulation. We extract just a portion of xdotb,
+        psi, x-coord, and y-coord to create the global reference vector.
+
     Returns
     -------
     ref
         The global reference vector for MPC.
     """
     b = k + hz
-    ref = np.empty((2 * hz, 1))
-    ref[0::2, 0] = traj.psi[k:b]
-    ref[1::2, 0] = traj.y[k:b] 
+    ref = np.empty((4 * hz, 1))
+    ref[0::4, 0] = traj.xdotb[k:b]
+    ref[1::4, 0] = traj.psi[k:b] 
+    ref[2::4, 0] = traj.xg[k:b] 
+    ref[3::4, 0] = traj.yg[k:b] 
     return ref
+
+
+def mpc_constraints(x: np.ndarray) -> Constraints:
+    """
+    Calculates the constraint parameters for an MPC iteration.
+
+    An extension may be to limit body frame acceleration rather than engine/brake acceleration as that is what
+    a passenger or load would experience.
+
+    Parameters
+    ----------
+    x
+        The current state of the iteration. The state is required because we want the lateral velocity to be small 
+        w.r.t. the longitudinal velocity.
+
+    Returns
+    -------
+    constraints
+        The constraint parameters to execute an MPC iteration. Note that these are constraints for the augmented
+        system as this is what MPC is applied to.
+    """
+    # States
+    xdotb = x[0, 0]
+
+    # Limit on rate of change of delta per control interval, and delta.
+    ddelta_lim = np.pi/300
+    delta_lim = np.pi/6
+
+    # Limit on the rate of change engine acceleration per control interval.
+    da_lim = 0.1
+
+    # Limit on the longitudinal velocity.
+    xdotb_max = 30.0
+    xdotb_min = 1.0
+
+    # Limit on the lateral velocity- we also want the ydotb to be much less than the longitudinal velocity.
+    if 0.17 * xdotb < 3:
+        ydotb_lim = 0.17 * xdotb
+    else:
+        ydotb_lim = 3.0
+
+    # Limit the engine/brake acceleration.
+    a_max = 1.0
+    a_min = -4.0
+
+    # We are applying limits to the body frame velocities, and the control inputs.
+    Cc = np.array([
+        [1, 0, 0, 0, 0, 0, 0, 0], 
+        [0, 1, 0, 0, 0, 0, 0, 0], 
+        [0, 0, 0, 0, 0, 0, 1, 0], 
+        [0, 0, 0, 0, 0, 0, 0, 1]
+    ])
+    
+    constraints = Constraints(
+        uub=np.array([[ddelta_lim, da_lim]]).T,
+        ulb=np.array([[-ddelta_lim, -da_lim]]).T,
+        xub=np.array([[xdotb_max, ydotb_lim, delta_lim, a_max]]).T,
+        xlb=np.array([[xdotb_min, -ydotb_lim, -delta_lim, a_min]]).T,
+        Cc=Cc,
+    )
+    return constraints
 
 
 def main():
@@ -48,49 +126,25 @@ def main():
     ###########################################################################
 
     Ts = 0.02           # Sampling period.
-    xdot = 20.0         # Longitudinal velocity.
-    lb = -np.pi/6.0     # Lower bound on tire angle.
-    ub = np.pi/6.0      # Upper bounf on tire angle.
-    TRAJ_TYPE = "cubic" # The type of trajectory to use.
-
-    Q = np.array([[1, 0], [0, 1]])  # weights for outputs (all samples, except the last one)
-    S = np.array([[1, 0], [0, 1]])  # weights for the final horizon period outputs
-    R = np.array([[1]])             # weights for inputs (only 1 input in our case)
-
-    model_params = BicycleModelParameters(m=1500, Iz=3000, Caf=19000, Car=33000, lf=2, lr=3, Ts=Ts, x_dot=xdot)
-    straight_config = StraightTrajectoryConfig(final_t=10, sampling_period=Ts, xdot=xdot, ycoord=-9.0)
-    cubic_config = CubicTrajectoryConfig(final_t=10, sampling_period=Ts, xdot=xdot, initial_y=-7.0, final_y=7.0)
-    sine_config = SineTrajectoryConfig(final_t=10.0, sampling_period=Ts, xdot=xdot, amplitude=5.0, frequency=0.25)
-    mpc_params = MPCParameters(hz=20, Q=Q, S=S, R=R)
-
-    ###########################################################################
-    # SIMULATION COMPONENTS
-    ###########################################################################
-
-    if TRAJ_TYPE == "straight":
-        traj = straight_trajectory(straight_config)
-    elif TRAJ_TYPE == "cubic":
-        traj = cubic_trajectory(cubic_config)
-    elif TRAJ_TYPE == "sine":
-        traj = sine_trajectory(sine_config)
-    else:
-        raise RuntimeError("Invalid trajectory type selected")
-    
-    sysd = bicycle_model(model_params)
-    sysd_aug = augmented_bicycle_model(sysd)
-    Hbar, Fbar = unconstrained_lti(sysd_aug, mpc_params)
-    control_law = -np.linalg.inv(Hbar) @ Fbar
+    model_params = CarModelParameters(m=1500, Iz=3000, Caf=38000, Car=66000, lf=2, lr=3, Ts=Ts, mju=0.02, g=9.81)
+    Q = np.diag([100, 20000, 1000, 1000]) 
+    S = np.diag([100, 20000, 1000, 1000]) 
+    R = np.diag([100, 1])             
+    mpc_params = MPCParameters(hz=30, Q=Q, S=S, R=R) # Not sure how generic these parameters are.
+    traj = car_trajectory_3(Ts, 2.0)
 
     ###########################################################################
     # INITIAL STATE OF THE SYSTEM
     ###########################################################################
 
-    ydot0 = 0.0
-    psi0 = 0.0
+    xdotb0 = traj.xdotb[0]
+    ydotb0 = traj.ydotb[0]
+    psi0 = traj.psi[0]
     psidot0 = 0.0
-    y0 = straight_config.ycoord + 10.0
-    u0 = 0.0
-    x0 = np.array([[ydot0, psi0, psidot0, y0]]).T
+    xpos0 = traj.xg[0]
+    ypos0 = traj.yg[0]
+    u0 = np.array([[0.0, 0.0]]).T
+    x0 = np.array([[xdotb0, ydotb0, psi0, psidot0, xpos0, ypos0]]).T
     
     ###########################################################################
     # SIMULATION OF CONTROL SYSTEMS
@@ -100,45 +154,89 @@ def main():
     u = u0                                          # The control action applied to this interation.
     x = x0.copy()                                   # The state of the un-augmented system.
     t_record = np.zeros((sim_size,))                # Store the time vector for the simulation
-    u_record = np.zeros((sim_size,))                # Stores the control action applied throught the simulation.
-    x_record = np.zeros((sysd.nstates, sim_size))   # Stores the state of the system calculated at each time step.
+    u_record = np.zeros((u0.shape[0], sim_size))    # Stores the control action applied throught the simulation.
+    x_record = np.zeros((x0.shape[0], sim_size))    # Stores the state of the system calculated at each time step.
 
     for k in range(sim_size):
 
+        # Store the state at each time step for visualization.
         t_record[k] = traj.t[k]
         x_record[:, k] = x[:, 0]
+
+        # Pick out the section of the reference trajectory to be used for this MPC interation.
         rg = generate_reference_signal(k, mpc_params.hz, traj)
 
+        # Build the linearized model fo the car.
+        sysd = car_model(x, u, model_params)
+        
         assert rg.shape == (sysd.noutputs * mpc_params.hz, 1)
         assert x.shape == (sysd.nstates, 1)
-        
-        ug = control_law @ np.vstack((x, np.array([[u]]), rg))
-        u = clamp(u + ug[0, 0], lb, ub)
-        x = sysd.A @ x + sysd.B @ np.array([[u]])
-        u_record[k] = u
 
+        # Augment the system, compute the MPC matrices and apply the control law.
+        sysd_aug = augmented_car_model(sysd)
+        constraints = mpc_constraints(x)
+        xaug = np.vstack((x, u))
+        Hbar, Fbar, G, h = constrained_lti(sysd_aug, mpc_params, constraints, xaug)
+        ug = solve_constrained_lti(Hbar, Fbar, G, h, xaug, rg)
+        if ug is None:
+            print("solver failed, exiting sim")
+            break
+    
+        assert ug.shape == (sysd.ninputs * mpc_params.hz, 1)
+
+        # Apply the control action to the system.
+        u = control_action(u, ug, constraints)
+        x = sysd.A @ x + sysd.B @ u     # Should technically use the nonlinear model
+        u_record[:, k] = u[:, 0]
+
+        if k % 100 == 0:
+            print(f"Completed {k} iterations of {sim_size}")
 
     ###########################################################################
     # VISUALIZATION
     ###########################################################################
 
-    fig, axs = plt.subplots(nrows=3)
-    axs[0].plot(traj.t, traj.y, label="reference")
-    axs[0].plot(t_record, x_record[3, :], label="state")
-    axs[0].set_ylabel("Y Displacement [m]")
-    axs[0].legend()
-    axs[0].set_title("MPC Simulation")
+    _, axs = plt.subplots(nrows=2, ncols=3, layout="constrained", figsize=(10, 15))
+    axs[0, 0].plot(traj.xg, traj.yg, label="The ref trajectory")
+    axs[0, 0].plot(x_record[4, :], x_record[5, :], label="state")
+    axs[0, 1].plot(traj.t, traj.xg, label="X Ref")
+    axs[0, 1].plot(t_record, x_record[4, :], label="X Pos")
+    axs[0, 1].plot(traj.t, traj.yg, label="Y Ref")
+    axs[0, 1].plot(t_record, x_record[5, :], label="Y Pos")
+    axs[0, 2].plot(t_record, u_record[0, :], label="Steering Angle")
+    axs[1, 0].plot(traj.t, traj.xdotb, label="X Vel Ref")
+    axs[1, 0].plot(t_record, x_record[0, :], label="X Vel")
+    axs[1, 0].plot(traj.t, traj.ydotb, label="Y Vel Ref")
+    axs[1, 0].plot(t_record, x_record[1, :], label="Y Vel")
+    axs[1, 1].plot(traj.t, traj.psi, label="Heading Ref")
+    axs[1, 1].plot(t_record, x_record[2, :], label="Heading")
+    axs[1, 2].plot(t_record, u_record[1, :], label="Engine/brake Acc")
 
-    axs[1].plot(t_record, u_record)
-    axs[1].set_ylabel("Tire Angle [rad]")
+    axs[0, 0].set_xlabel("X Position [m]")
+    axs[0, 0].set_ylabel("Y Position [m]")
+    axs[0, 0].grid(True)
+    axs[0, 0].legend(loc='upper right',fontsize='small')
+    axs[0, 1].set_xlabel("Time [s]")
+    axs[0, 1].set_ylabel("Position [m]")
+    axs[0, 1].grid(True)
+    axs[0, 1].legend(loc='upper right',fontsize='small')
+    axs[0, 2].set_xlabel("Time [s]")
+    axs[0, 2].set_ylabel("Angle [rad]")
+    axs[0, 2].grid(True)
+    axs[0, 2].legend(loc='upper right',fontsize='small')
+    axs[1, 0].set_xlabel("Time [s]")
+    axs[1, 0].set_ylabel("Velocity [m/s]")
+    axs[1, 0].grid(True)
+    axs[1, 0].legend(loc='upper right',fontsize='small')
+    axs[1, 1].set_xlabel("Time [s]")
+    axs[1, 1].set_ylabel("Heading [rad]")
+    axs[1, 1].grid(True)
+    axs[1, 1].legend(loc='upper right',fontsize='small')
+    axs[1, 2].set_xlabel("Time [s]")
+    axs[1, 2].set_ylabel("Accel [m/s/s]")
+    axs[1, 2].grid(True)
+    axs[1, 2].legend(loc='upper right',fontsize='small')
 
-    axs[2].plot(traj.t, traj.psi, label="reference")
-    axs[2].plot(t_record, x_record[1, :], label="state")
-    axs[2].set_xlabel("Time [s]")
-    axs[2].set_ylabel("Yaw Angle [rad]")
-    axs[2].legend()
-
-    fig.set_size_inches(8, 6)
     plt.show()
 
     

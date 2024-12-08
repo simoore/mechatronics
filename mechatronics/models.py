@@ -142,6 +142,140 @@ def augmented_bicycle_model(sysd: ct.StateSpace) -> ct.StateSpace:
 
     A_aug = np.vstack((A1, A2))
     B_aug = np.vstack((sysd.B, np.identity(sysd.ninputs)))
+
+    # TODO: I don't think this is correct - if there is feed through the D matrix should be augmented into the C matrix
+    # and the D matrix should be zero.
+    C_aug = np.hstack((sysd.C, np.zeros((sysd.noutputs, sysd.ninputs))))
+    D_aug = sysd.D
+
+    sys_aug = ct.StateSpace(A_aug, B_aug, C_aug, D_aug, sysd.dt)
+    return sys_aug
+
+
+@dataclasses.dataclass
+class CarModelParameters:
+    m: float
+    """The mass of the vehicle in kg."""
+    Iz: float
+    """The moment of inertia of the vehicle around the z-axis.""" 
+    Caf: float
+    """The cornering stiffness of both front wheels combined."""
+    Car: float 
+    """The cornering stiffness of both rear wheels combined."""
+    lf: float 
+    """The distance between the center of mass and the front wheels"""
+    lr: float 
+    """The distance between the center of mass and the rear wheels"""
+    Ts: float 
+    """The sampling period of the the discrete time representation in s"""
+    mju: float
+    """The drag or friction coefficient of the vehicle."""
+    g: float
+    """Acceleration due to gravity."""
+
+
+def car_model(x: np.ndarray, u: np.ndarray, p: CarModelParameters, method: str = "zoh") -> ct.StateSpace:
+    """
+    This model is derived by applying Newton's laws in the body frame of a car. Forces are associated with the 
+    corninering stiffness of the wheels, the acceleration applied by the enginer, and drag/friction applied to the 
+    vehicle. The body frame is not an interial frame of reference. This is a further generalization of the bicycle 
+    model above and doesn't constrain the system to move at a constant longitudinal velocity or a small heading.
+
+    This is a linearization of a non-linear model, hence the requirement to provide the state and input. It is denoted
+    a linear parameter varying model as there are explicit formulations of the state space matrices as a function
+    of the state and we do not need to derive a jacobian to linearize it. This model assumes that the longitudinal 
+    velocity remains greater than zero (we divide by this parameter). 
+
+    The state of the system is [xdotb, ydotb, psi, psidot, X, Y] which are,
+
+    * xdotb - the longitudinal velocity in the body frame.
+    * ydotb - the lateral velocity in the body frame.
+    * psi - the heading.
+    * psidot - the rate of change of the heading.
+    * X - the x position in the global frame.
+    * Y - the y position in the global frame.
+
+    The inputs [delta, a] are,
+
+    * delta - the steering angle.
+    * a - applied engine acceleration.
+
+    The C matrix is set to select states which we want to explicity control using MPC. These are
+    [xdotb, psi, X, Y].
+
+    Parameters
+    ----------
+    x
+        The current state of the system.
+    u
+        The current input to the system.
+    p
+        The model parameters.
+    method
+        This is the discretization method used to convert the continuous time system into a discrete time system. The
+        options are {"bilinear", "euler", "backward_diff", "zoh"}
+
+    Returns
+    -------
+    sysd
+        The discretized state space system for the car.
+    """
+
+    xdotb = x[0, 0]
+    ydotb = x[1, 0]
+    psi = x[2, 0]
+    delta = u[0, 0]
+
+    A11 = -p.mju * p.g / xdotb
+    A12 = p.Caf * np.sin(delta) / (p.m * xdotb)
+    A14 = p.Caf * p.lf * np.sin(delta) / (p.m * xdotb) + ydotb
+    A22 = -(p.Car + p.Caf * np.cos(delta)) / (p.m * xdotb)
+    A24 = -(p.Caf * p.lf * np.cos(delta) - p.Car * p.lr) / (p.m * xdotb) - xdotb
+    A34 = 1
+    A42 = -(p.Caf * p.lf * np.cos(delta) - p.lr * p.Car) / (p.Iz * xdotb)
+    A44 = -(p.Caf * p.lf**2 * np.cos(delta) + p.lr**2 * p.Car) / (p.Iz * xdotb)
+    A51 = np.cos(psi)
+    A52 = -np.sin(psi)
+    A61 = np.sin(psi)
+    A62 = np.cos(psi)
+
+    B11 = -1 / p.m * np.sin(delta) * p.Caf
+    B12 = 1
+    B21 = 1 / p.m * np.cos(delta) * p.Caf
+    B41 = 1 / p.Iz * np.cos(delta) * p.Caf * p.lf
+
+    A = np.array([[A11, A12, 0, A14, 0, 0], [0, A22, 0, A24, 0, 0], [0, 0, 0, A34, 0, 0],
+        [0, A42, 0, A44, 0, 0], [A51, A52, 0, 0, 0, 0], [A61, A62, 0, 0, 0, 0]])
+    B = np.array([[B11, B12], [B21, 0], [0, 0], [B41, 0], [0, 0], [0, 0]])
+    C = np.array([[1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]])
+    D = np.array([[0, 0], [0, 0], [0, 0], [0, 0]])
+
+    sysc = ct.ss(A, B, C, D)
+    sysd = ct.sample_system(sysc, p.Ts, method=method)
+
+    return sysd
+
+
+def augmented_car_model(sysd: ct.StateSpace) -> ct.StateSpace:
+    """
+    We want to change the the input of the system to be the change in tire angle and change in engine acceleration, 
+    not the absolute values of these parameters themselves. In this case the inputs become states of the system.
+
+    Parameters
+    ----------
+    sysd
+        The system to augment.
+
+    Returns
+    -------
+    sys_aug
+        The augmented system.
+    """
+    A1 = np.hstack((sysd.A, sysd.B))
+    A2 = np.hstack((np.zeros((sysd.ninputs, sysd.nstates)), np.identity(sysd.ninputs)))
+
+    A_aug = np.vstack((A1, A2))
+    B_aug = np.vstack((sysd.B, np.identity(sysd.ninputs)))
     C_aug = np.hstack((sysd.C, np.zeros((sysd.noutputs, sysd.ninputs))))
     D_aug = sysd.D
 

@@ -3,6 +3,7 @@ import numpy as np
 from mechatronics.mpc import block_diag, unconstrained_lti, MPCParameters
 from mechatronics.models import BicycleModelParameters, bicycle_model, augmented_bicycle_model
 
+
 def test_block_diag():
 
     a = np.array([[1, 2, 3], [4, 5, 6]])
@@ -28,7 +29,9 @@ def test_unconstrained_lti_mpc():
     sysd = bicycle_model(model_params)
     sysd_aug = augmented_bicycle_model(sysd)
 
-    Hbar, Fbar = unconstrained_lti(sysd_aug, mpc_params)
+    Hbar, Fbar, Cbar, Abar = unconstrained_lti(sysd_aug, mpc_params)
 
     assert Hbar.shape == (hz * sysd_aug.ninputs, hz * sysd_aug.ninputs)
     assert Fbar.shape == (hz * sysd_aug.ninputs, sysd_aug.nstates + hz * sysd_aug.noutputs)
+    assert Cbar.shape == (hz * sysd_aug.nstates, hz * sysd_aug.ninputs)
+    assert Abar.shape == (hz * sysd_aug.nstates, sysd_aug.nstates)

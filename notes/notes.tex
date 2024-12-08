@@ -118,6 +118,7 @@ If have small yaw angles, we can linearize the last equation as $\dot{Y} = \dot{
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Discretizing \& Augmenting the Bicycle Model}
+\label{sec:augmented-bicycle}
 
 We are going to design an MPC controller for the linearized bicycle model given by,
 \begin{align}
@@ -165,6 +166,7 @@ With the augmented model, we are able to design a MPC control law following the 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Solving MPC for Unconstrained LTI Systems}
+\label{sec:unconstrained-mpc}
 
 Given the discrete time system,
 \begin{align}
@@ -185,7 +187,7 @@ Let's define a global state vector and global input vector along a finite horizo
 \end{align}
 Then we can compute this global state vector from the initial state and the global input vector as,
 \begin{equation}
-    x_g = \doublebar{C}u_G + \doublebar{A}x_0
+    x_G = \doublebar{C}u_G + \doublebar{A}x_0
     \label{eq:global-system}
 \end{equation}
 where the two system matrices are,
@@ -329,6 +331,7 @@ and initial state), we can create a simplifed cost function with the same soluti
     \begin{bmatrix} \doublebar{A}^T\doublebar{Q}\doublebar{C} \\ -\doublebar{T}\doublebar{C} \end{bmatrix} u_G
     \\
     &= \tfrac{1}{2}u_G^T\doublebar{H}u_G +  \begin{bmatrix} x_0^T & r_G^T \end{bmatrix}\doublebar{F}^Tu_G
+    \label{eq:unconstrained-cost}
 \end{align}
 Note that this is now a quadratic function with respect to the control input $u_G$ which is what we want to find.
 Taking the the gradient of this function (see \Crefrange{eq:grad-a}{eq:grad-b}) and equating it to zero gives the
@@ -497,6 +500,90 @@ using the reference $\psi$. Therefore the output matrix $C$ is,
     \end{bmatrix}
     \begin{bmatrix} \dot{x} \\ \dot{y} \\ \psi \\ \dot{\psi} \\ X \\ Y \end{bmatrix}
 \end{equation}
+We want to change the inputs to the system to be the rate of change of $\delta$ and $a$. We follow the same process as
+described in \Cref{sec:augmented-bicycle}. The augmented system make the inputs $\Delta\delta$ and $\delta a$. Given
+the discrete time state space matrices $A_d, B_d, C_d$ (assume $D_d=0$), the augmented system used in the MPC algorithm
+has the following system matrices,
+\begin{align}
+    A_a &= \begin{bmatrix} A_d & B_d \\ 0 & I \end{bmatrix} &
+    B_a &= \begin{bmatrix} B_d \\ I \end{bmatrix} &
+    C_a &= \begin{bmatrix} C_d & 0 \end{bmatrix}
+\end{align}
+To execute MPC for a LPV model we substitute the current state into the equations above to derive a LTI model. Then we
+derive the MPC cost function matrices in the same manner as the unconstrained LTI described in
+\Cref{sec:unconstrained-mpc}. To summarize the cost function from \Cref{eq:unconstrained-cost} is,
+\begin{equation}
+    J'' = \tfrac{1}{2}u_G^T\doublebar{H}u_G +  \begin{bmatrix} x_0^T & r_G^T \end{bmatrix}\doublebar{F}^Tu_G
+\end{equation}
+where $u_G$ is the global input vector that we want to find, $x_0$ is the initial state, $r_G$ is the global reference
+vector, $\doublebar{H}$ and $\doublebar{F}$ are matrices derived in \Cref{sec:unconstrained-mpc}. As in the
+unconstrained case this cost function can be solved analytically for $u_G$ and the control action applied to the
+system. For each control iteration, we need to convert the LPV to LTI each time as the state changes and recompute the
+MPC cost function to solve it for $u_G$.
+
+Note that the cost function assumes the state changes is small over the time horizon and thus the state space matrices
+are constant for the MPC derivations. This allows us to use the LTI formulation to dervie the cost function matrices. If
+the state was expected to change significantly during the MPC prediction, we should iteraively calculate new state space
+matrices for each time step over the MPC horizon.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Constrained Linear Parameter Varying MPC}
+
+When we place constraints on the inputs or states, we no longer can derive an analytical solution. We must use a
+quadratic program (QP) solver instead. A solver requires us to provide details of the cost function and constraints
+and it will compute a solutions.
+
+\begin{tcolorbox}[title={Using QPSolver in Python}]
+    The QP solver https://qpsolvers.github.io/qpsolvers/quadratic-programming.html requires the QP in the form,
+    \begin{align}
+        & \min \frac{1}{2}x^TPx+q^Tx \\
+        & \text{s.t.} \qquad Gx \leq h
+    \end{align}
+    Therefore we need to supply the matrices $P, q, G, h$ to solve the MPC problem.
+\end{tcolorbox}
+
+The cost function for the unconstrained and constrained problem is the same so when using QPSolver $P=\doublebar{H}$
+and $q=\doublebar{F}\left[x_o^T \; r_G^T\right]^T$. We need to derive the constraint matricies. We will start with the
+constraints on the states. We specify upper and lower bounds on a transformed version of the states. That is,
+\begin{equation}
+    x_l \leq C_cx \leq x_u
+\end{equation}
+The constraint selection matrix $C_c$ is used to select the states we want to apply constraints to and consists of 0's
+and 1's. The first thing to note is that the MPC problem uses the global state vector $x_G$ rather than just a single
+state vector so we expand the constraints as,
+\begin{equation}
+    \doublebar{x}_l \leq \doublebar{C}_cx_G \leq \doublebar{x}_u
+\end{equation}
+where,
+\begin{align}
+    \doublebar{x}_l &= \begin{bmatrix} x_l \\ \vdots \\ x_l \end{bmatrix} &
+    \doublebar{C}_c &= \begin{bmatrix} C_c & & \\  & \ddots &  \\ & & C_c \end{bmatrix} &
+    \doublebar{x}_u &= \begin{bmatrix} x_u \\ \vdots \\ x_u \end{bmatrix} &
+\end{align}
+Furthermore we need to transform the global state vector to the global input vector as that is what we are solving for.
+We substitute in \Cref{eq:global-system} and rearrange,
+\begin{align}
+    \doublebar{x}_l \leq \doublebar{C}_c\left(\doublebar{C}u_G + \doublebar{A}x_0\right) \leq \doublebar{x}_u \\
+    \doublebar{x}_l - \doublebar{C}_C\doublebar{A}x_0 \leq \doublebar{C}_c\doublebar{C}u_G \leq \doublebar{x}_u -
+    \doublebar{C}_C\doublebar{A}x_0
+\end{align}
+Next we add in explicit constraints on the gloabl state vector $\doublebar{u}_l$ and $\doublebar{u}_u$ and then
+rearrange to put the constraints in the form required for the QP solver,
+\begin{equation}
+    \begin{bmatrix} \doublebar{C}_C\doublebar{C} \\ -\doublebar{C}_C\doublebar{C} \\ I \\ -I \end{bmatrix} u_G
+    \leq
+    \begin{bmatrix}
+        \doublebar{x}_u - \doublebar{C}_C\doublebar{A}x_0 \\ -\doublebar{x}_l + \doublebar{C}_C\doublebar{A}x_0 \\
+        \doublebar{u}_u \\
+        -\doublebar{u}_l
+    \end{bmatrix}
+\end{equation}
+The LHS matrix is the $G$ required by QPSolver, and the RHS matrix is the $h$ required by QPSolver. Thus all required
+information is available to solve for an iteration of the MPC algorithm for $u_G$.
+
+As an externsion you can have time varying constraint to, for example, make sure one state is always smaller than
+another.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -505,6 +592,6 @@ using the reference $\psi$. Therefore the output matrix $C$ is,
 
 https://engineeringmedia.com/controlblog/the-kalman-filter
 
-https://www.youtube.com/playlist?list=PLMLojHoA_QPmRiPotD_TnfdUkglTexuqm
+https://www.youtube.com/playlist?list=PLMLojHoA\_QPmRiPotD\_TnfdUkglTexuqm
 
 \end{document}

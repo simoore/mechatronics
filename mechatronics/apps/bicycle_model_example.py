@@ -78,7 +78,7 @@ def main():
     
     sysd = bicycle_model(model_params)
     sysd_aug = augmented_bicycle_model(sysd)
-    Hbar, Fbar = unconstrained_lti(sysd_aug, mpc_params)
+    Hbar, Fbar, _, _ = unconstrained_lti(sysd_aug, mpc_params)
     control_law = -np.linalg.inv(Hbar) @ Fbar
 
     ###########################################################################
